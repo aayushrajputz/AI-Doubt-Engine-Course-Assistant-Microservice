@@ -5,6 +5,7 @@ from app.ai.sanitizers import sanitize_user_prompt
 import os
 from groq import AsyncGroq
 from dotenv import load_dotenv
+import json
 
 load_dotenv()
 groq_client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
@@ -12,6 +13,12 @@ groq_client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 
 tokenizer = tiktoken.get_encoding("cl100k_base")
 
+def calculate_cost(input_token : int, output_tokens: int) -> dict:
+    cost_usd = (input_token/ 1_000_000 *0.15) + (output_tokens/ 1_000_000 *0.50)
+    cost_inr = cost_usd * 84.0
+    
+    return {"usd": cost_usd, "inr": cost_inr}
+    
 def count_tokens(text: str) -> int:
     return len(tokenizer.encode(text))
 
@@ -70,29 +77,50 @@ def safety_router(state: AgentState) -> str:
 
 
 async def stream_doubt_answer(question : str, course_id : int):
+    full_answer = []
     is_safe, reason = sanitize_user_prompt(question)
     if not is_safe:
-        yield f"i cannot ans this ques {reason}\n\n"
-        yield "data: Done\n\n"
+        yield f"data: I cannot answer this query. Reason: {reason}\n\n"
+        yield "data: [DONE]\n\n"
         return 
 
-    prompt = f"learner Ques{question}"
+    prompt = f"Learner Question: {question}"
+    input_tokens = count_tokens(prompt) + count_tokens(SYSTEM_PROMPT)
+
     stream = await groq_client.chat.completions.create(
-        model = "openai/gpt-oss-120b"  ,  
+        model = "openai/gpt-oss-120b",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt} 
         ],
-        
         temperature = 0.1,
         max_tokens = 800,
-        stream = True ,
+        stream = True,
     )
-    async for chunk in stream :
+    async for chunk in stream:
         token = chunk.choices[0].delta.content
-        if token : 
-         yield f"data:{token}\n\n" 
-    yield "data : Done \n\n"
+        if token:
+            full_answer.append(token)
+            yield f"data: {token}\n\n"
+
+    complete_text = "".join(full_answer)
+    output_tokens = count_tokens(complete_text)
+    costs = calculate_cost(input_tokens, output_tokens)
+
+    metrics = {
+        "event": "usage_metrics",
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+        "cost_inr": f"₹{costs['inr']}",
+        "cost_usd": f"${costs['usd']}"
+    }
+    yield f"data: {json.dumps(metrics)}\n\n"
+    yield "data: [DONE]\n\n"
+
+    if redis and cache_key:
+        await redis.set(cache_key, complete_text, ex=86400)     
+
 
  
 workflow = StateGraph(AgentState)
