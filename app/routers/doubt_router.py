@@ -67,8 +67,12 @@ async def stream_doubt(
     cached_answer = await redis.get(cache_key)
     if cached_answer:
         async def stream_cached():
-            yield f"data: [EXACT CACHE HIT] {cached_answer}\n\n"
-            metrics = {
+            yield "data: [EXACT CACHE HIT]\n\n"
+            for line in cached_answer.splitlines(keepends=True):
+                yield f"data: {line}\n\n"
+            
+
+            metrics = { 
                 "event": "usage_metrics",
                 "cached": True,
                 "cache_type": "exact_redis",
@@ -98,7 +102,11 @@ async def stream_doubt(
             await redis.set(cache_key, matched_doubt.ai_answer, ex=86400)
 
             async def stream_semantic():
-                yield f"data: [SEMANTIC CACHE HIT ({similarity:.1%})] {matched_doubt.ai_answer}\n\n"
+                yield f"data: [SEMANTIC CACHE HIT ({similarity:.1%})]\n\n"
+                for line in matched_doubt.ai_answer.splitlines(keepends=True):
+                    yield f"data: {line}\n\n"
+
+
                 metrics = {
                     "event": "usage_metrics",
                     "cached": True,
