@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.course_chunk_model import CourseChunk
+from app.models.doubt_model import Doubt
 
 class CourseChunkRepository:
     async def create_chunk(
@@ -85,4 +86,17 @@ class CourseChunkRepository:
         return [(chunks_map[cid], rrf_scores[cid]) for cid in sorted_chunk_ids[:limit]]
     
     
-    
+    async def find_semantically_similar_doubts(self,session, course_id, query_vector, threshold=0.75,limit=1):        
+        stmt = (
+            select(Doubt, (1- Doubt.embedding.cosine_distance(query_vector)).label("similarity"))
+            .where(Doubt.course_id == course_id)
+            .where(Doubt.ai_answer.isnot(None))
+            .order_by(Doubt.embedding.cosine_distance(query_vector)).limit(limit)
+        )
+        result = await session.execute(stmt)
+        row = result.first()
+        if row :
+            doubt_obj, similarity = row[0],row[1]
+            if similarity>= threshold:
+                return doubt_obj, similarity
+        return None 

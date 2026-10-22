@@ -54,7 +54,7 @@ workflow.add_edge("refusal_node", END)
 tutor_graph = workflow.compile()
 
 # Real-Time SSE Token Streamer
-async def stream_doubt_answer(question: str, course_id: int):
+async def stream_doubt_answer(question: str, course_id: int,redis=None,cache_key: str=None):
     full_answer = []
     is_safe, reason = sanitize_user_prompt(question)
     if not is_safe:
@@ -84,9 +84,12 @@ async def stream_doubt_answer(question: str, course_id: int):
     complete_text = "".join(full_answer)
     output_tokens = count_tokens(complete_text)
     costs = calculate_cost(input_tokens, output_tokens)
+    if redis and cache_key:
+        await redis.set(cache_key, complete_text, ex=86400)
 
     metrics = {
         "event": "usage_metrics",
+        "cached": False,
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "total_tokens": input_tokens + output_tokens,
