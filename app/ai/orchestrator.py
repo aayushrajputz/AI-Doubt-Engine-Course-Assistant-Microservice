@@ -98,3 +98,4 @@ async def stream_doubt_answer(question: str, course_id: int,redis=None,cache_key
     }
     yield f"data: {json.dumps(metrics)}\n\n"
     yield "data: [DONE]\n\n"
+

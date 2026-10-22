@@ -1,4 +1,4 @@
-# 🧠 AI Doubt Engine — Course Assistant Microservice
+#  AI Doubt Engine — Course Assistant Microservice
 
 > **Production-grade AI-powered doubt resolution engine** built for EdTech platforms. Combines LangGraph multi-agent orchestration, pgvector semantic search, and 3-tier intelligent caching to deliver instant, context-aware answers at near-zero LLM cost.
 
@@ -10,7 +10,7 @@
 
 ---
 
-## 🏗️ Architecture
+##  Architecture
 
 ```
                          Learner Request (Doubt / Question)
@@ -54,7 +54,7 @@
 
 ---
 
-## ✨ Key Features
+##  Key Features
 
 | Feature | Description |
 |---|---|
@@ -69,7 +69,7 @@
 
 ---
 
-## 📁 Project Structure
+##  Project Structure
 
 ```
 app/
@@ -101,7 +101,7 @@ app/
 
 ---
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### Prerequisites
 
