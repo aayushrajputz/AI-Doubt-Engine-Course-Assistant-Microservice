@@ -59,23 +59,27 @@
 | Feature | Description |
 |---|---|
 | **3-Tier Intelligent Caching** | Redis exact match → pgvector semantic similarity (≥85%) → LLM fallback. Eliminates redundant API calls. |
+| **Dual Rate Limiting & Budgeting** | Per-user protection: max 5 requests/hr + 10,000 tokens/hr via Redis TTL keys. Cache hits are free from quota consumption. |
 | **LangGraph Multi-Agent Pipeline** | Guardrail → Retriever → Tutor nodes with conditional routing and state management. |
 | **Hybrid Search (RRF)** | Reciprocal Rank Fusion combining pgvector cosine similarity + keyword ILIKE search for maximum recall. |
 | **HNSW Vector Indexing** | Sub-100ms approximate nearest neighbor search on 768-dim embeddings (`m=16, ef_construction=64`). |
 | **Real-Time SSE Streaming** | Token-by-token answer streaming via `StreamingResponse` with TTFT optimization. |
+| **Interactive CLI Chat Client** | Terminal-based interactive client (`chat.py`) demonstrating live SSE streaming and cost breakdown. |
 | **Prompt Injection Guard** | Regex-based sanitizer blocks jailbreak attempts and off-topic prompt injections. |
-| **Cost Tracking** | Per-request token counting with INR/USD cost calculation reported in stream metrics. |
+| **Cost & Token Accounting** | BPE `tiktoken` accounting with exact prompt/completion token count and INR/USD cost calculation. |
 | **Embedding-on-Ingest** | Every doubt is embedded at creation time for future semantic matching. |
 
 ---
 
-##  Project Structure
+## 📁 Project Structure
 
 ```
+├── chat.py                      # Interactive CLI terminal client for live testing
 app/
 ├── server.py                    # FastAPI app, lifespan (DB + Redis init), health check
 ├── core/
-│   └── database.py              # AsyncEngine, async_sessionmaker, get_db dependency
+│   ├── database.py              # AsyncEngine, async_sessionmaker, get_db dependency
+│   └── rate_limiter.py          # Dual sliding-window rate limiter & token recorder (Redis)
 ├── models/
 │   ├── doubt_model.py           # Doubt ORM (id, question, ai_answer, embedding Vector(768))
 │   └── course_chunk_model.py    # CourseChunk ORM (content, embedding Vector(768))
@@ -236,6 +240,7 @@ data: {"event": "usage_metrics", "cached": true, "cache_type": "semantic_vector"
 
 ## 🔒 Security
 
+- **Dual Rate Limiting & Token Budgeting**: Per-user sliding-window limiter prevents API abuse (5 requests/hr) and runaway LLM costs (10,000 tokens/hr), rejecting offenders with `429 Too Many Requests`.
 - **Prompt Injection Guard**: Regex-based sanitizer detects and blocks jailbreak patterns, system prompt extraction attempts, and off-topic queries before they reach the LLM.
 - **Input Validation**: Pydantic v2 strict DTOs with field validators sanitize all incoming data.
 - **Graceful Shutdown**: Lifespan manager ensures zero socket leaks on `SIGTERM` — Redis and DB connections cleanly disposed.
