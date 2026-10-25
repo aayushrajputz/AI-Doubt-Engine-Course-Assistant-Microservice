@@ -2,6 +2,7 @@ from pydantic import BaseModel , Field, field_validator
 from pydantic import ConfigDict
 
 class DoubtCreate(BaseModel):
+    user_id : int = Field(default=1, gt=0, title = "user id")
     title : str = Field(..., min_length = 5, title = "doubt title")
     question : str = Field(..., title = "question")
     course_id : int = Field(..., gt=0, title = "course id")
@@ -18,6 +19,7 @@ class DoubtCreate(BaseModel):
      
         
 class DoubtResponse(BaseModel):
+    user_id : int
     id : int
     title : str
     question : str

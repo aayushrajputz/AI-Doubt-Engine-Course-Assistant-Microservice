@@ -9,7 +9,7 @@ class Base(DeclarativeBase):
 
 class Doubt(Base):
     __tablename__ = "doubts"  # Database mein table ka actual naam
-    
+    user_id : Mapped[int] = mapped_column(Integer,nullable=False,index=True,default=1)
     id: Mapped[int] = mapped_column(primary_key = True, autoincrement = True) 
     title : Mapped[str] = mapped_column(String(150), nullable = False)
     question: Mapped[str] = mapped_column(Text, nullable = False)

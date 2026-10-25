@@ -12,21 +12,24 @@ from fastapi import Request
 import json
 from app.services.embedding_service import get_embedding
 from app.repositories.course_chunk_repository import CourseChunkRepository
+from app.core.rate_limiter import check_rate_limit, record_tokens
+
 
 router  = APIRouter(prefix="/doubts",tags=["doubts"])
-
+ 
 repo = DoubtRepository()
 chunk_repo = CourseChunkRepository()
 
 @router.post("/", response_model=DoubtResponse, status_code=status.HTTP_201_CREATED)
 async def create_doubt(
-    payload: DoubtCreate,               
+    payload: DoubtCreate,
     db: AsyncSession = Depends(get_db)  
 ):
     # Doubt ka embedding generate karo semantic matching ke liye
     q_embedding = await get_embedding(payload.question)
 
     new_doubt = Doubt(
+        user_id =payload.user_id,
         title=payload.title,
         question=payload.question,
         course_id=payload.course_id,
@@ -123,12 +126,25 @@ async def stream_doubt(
                 yield "data: [DONE]\n\n"
             return StreamingResponse(stream_semantic(), media_type="text/event-stream")
 
-    #  Cache Miss: LLM Inference
+    # 3. Cache Miss: LLM Inference (Rate limit check runs here so cache hits remain free)
+    await check_rate_limit(redis, doubt.user_id)
+
     async def stream_and_save():
         full_text = []
         async for chunk in stream_doubt_answer(doubt.question, doubt.course_id, redis=redis, cache_key=cache_key):
             if chunk.startswith("data: ") and not chunk.startswith("data: {") and not "[DONE]" in chunk:
                 full_text.append(chunk.replace("data: ", "").replace("\n\n", ""))
+            
+            # Agar metrics ka event aaya, toh user ke tokens record kar lo!
+            if '"event": "usage_metrics"' in chunk:
+                try:
+                    metrics_data = json.loads(chunk.replace("data: ", "").strip())
+                    tokens = metrics_data.get("total_tokens", 0)
+                    if tokens > 0:
+                        await record_tokens(redis, doubt.user_id, tokens)
+                except Exception:
+                    pass
+            
             yield chunk
 
         # DB me save karo taaki future me semantic search ho sake
