@@ -13,6 +13,8 @@ import json
 from app.services.embedding_service import get_embedding
 from app.repositories.course_chunk_repository import CourseChunkRepository
 from app.core.rate_limiter import check_rate_limit, record_tokens
+from app.services.chapter_resolver import resolve_chapter
+import hashlib
 
 
 router  = APIRouter(prefix="/doubts",tags=["doubts"])
@@ -29,7 +31,9 @@ async def create_doubt(
     q_embedding = await get_embedding(payload.question)
 
     new_doubt = Doubt(
-        user_id =payload.user_id,
+        user_id=payload.user_id,
+        video_id=payload.video_id,
+        timestamp=payload.timestamp,
         title=payload.title,
         question=payload.question,
         course_id=payload.course_id,
@@ -65,8 +69,28 @@ async def stream_doubt(
         raise HTTPException(status_code=404, detail="Doubt not found")
 
     
-    # 1. Exact Cache Check (Redis Hot Path)
-    cache_key = f"doubt_cache:{doubt.course_id}:{doubt.id}"
+    # Resolve chapter context if video doubt
+    chapter_ctx = None
+    video_prompt_context = None
+    if doubt.video_id and doubt.timestamp is not None:
+        chapter_ctx = await resolve_chapter(db, doubt.video_id, doubt.timestamp)
+        if chapter_ctx:
+            video_prompt_context = f"""[VIDEO LECTURE CONTEXT]
+- Video: {chapter_ctx.video_title}
+- Chapter: {chapter_ctx.chapter_title} ({chapter_ctx.time_range_formatted})
+- Summary: {chapter_ctx.summary}
+- Key Concepts Taught: {', '.join(chapter_ctx.key_concepts)}
+- Current Student Position: {doubt.timestamp}s
+
+INSTRUCTION: Address the student's question specifically in context of what is taught in this video timestamp window."""
+
+    # 1. Exact Cache Check (Redis Hot Path with Timestamp Bucketing)
+    if chapter_ctx:
+        q_hash = hashlib.md5(doubt.question.strip().lower().encode()).hexdigest()[:10]
+        cache_key = f"doubt_cache:{chapter_ctx.cache_bucket_key}:{q_hash}"
+    else:
+        cache_key = f"doubt_cache:{doubt.course_id}:{doubt.id}"
+
     cached_answer = await redis.get(cache_key)
     if cached_answer:
         async def stream_cached():
@@ -99,7 +123,6 @@ async def stream_doubt(
         )
         if similar_result:
             matched_doubt, similarity = similar_result
-            # Is doubt ka bhi ai_answer update kar do DB me
             doubt.ai_answer = matched_doubt.ai_answer
             await db.commit()
             await redis.set(cache_key, matched_doubt.ai_answer, ex=86400)
@@ -108,7 +131,6 @@ async def stream_doubt(
                 yield f"data: [SEMANTIC CACHE HIT ({similarity:.1%})]\n\n"
                 for line in matched_doubt.ai_answer.splitlines(keepends=True):
                     yield f"data: {line}\n\n"
-
 
                 metrics = {
                     "event": "usage_metrics",
@@ -125,13 +147,57 @@ async def stream_doubt(
                 yield f"data: {json.dumps(metrics)}\n\n"
                 yield "data: [DONE]\n\n"
             return StreamingResponse(stream_semantic(), media_type="text/event-stream")
+     
+    retrieved_chunks = []
+    rag_tier = "none"
+
+    if chapter_ctx and doubt.embedding:
+        local_results = await chunk_repo.search_bounded_chunks(
+            session=db,
+            video_id=chapter_ctx.video_id,
+            start_time=chapter_ctx.start_time,
+            end_time=chapter_ctx.end_time,
+            query_vector=doubt.embedding,
+            limit=2
+        )
+        if local_results and local_results[0][1] >= 0.80:
+            rag_tier = "local_only"
+            for chunk,sim in local_results:
+                retrieved_chunks.append(f"[local chapter video chunk @ {chunk.timestamp}s]: {chunk.content}")
+
+    if not retrieved_chunks and doubt.embedding:
+        rag_tier = "course_wide_rrf_fallback"
+        rrf_results = await chunk_repo.hybrid_search(
+                session=db,
+                course_id=doubt.course_id,
+                query_vector=doubt.embedding,
+                query_text=doubt.question,
+                limit=2
+            )
+
+        for chunk, sim in rrf_results:
+            retrieved_chunks.append(
+                f"course video reference chunk(video {chunk.video_id or 'general course content'}:{chunk.content})"
+            )
+    if retrieved_chunks:
+        rag_text = "\n".join(retrieved_chunks)
+        if video_prompt_context:
+            video_prompt_context +=f"\n\n[RELEVANT COURSE CHUNKS ({rag_tier})]\n{rag_text}"
+        else:
+            video_prompt_context = f"[COURSE CHUNKS ({rag_tier})]\n{rag_text}"
 
     # 3. Cache Miss: LLM Inference (Rate limit check runs here so cache hits remain free)
     await check_rate_limit(redis, doubt.user_id)
 
     async def stream_and_save():
         full_text = []
-        async for chunk in stream_doubt_answer(doubt.question, doubt.course_id, redis=redis, cache_key=cache_key):
+        async for chunk in stream_doubt_answer(
+            question=doubt.question,
+            course_id=doubt.course_id,
+            redis=redis,
+            cache_key=cache_key,
+            video_context=video_prompt_context
+        ):
             if chunk.startswith("data: ") and not chunk.startswith("data: {") and not "[DONE]" in chunk:
                 full_text.append(chunk.replace("data: ", "").replace("\n\n", ""))
             

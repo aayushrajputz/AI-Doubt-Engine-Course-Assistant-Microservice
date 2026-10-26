@@ -2,7 +2,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.course_chunk_model import CourseChunk
 from app.models.doubt_model import Doubt
-
 class CourseChunkRepository:
     async def create_chunk(
         self,
@@ -39,6 +38,30 @@ class CourseChunkRepository:
         )
         result = await session.execute(stmt)
         return list(result.all())
+
+    async def search_bounded_chunks(
+        self,
+        session: AsyncSession,
+        video_id: int,
+        start_time: int,
+        end_time: int,
+        query_vector: list[float],
+        limit: int = 3
+    ) -> list[tuple[CourseChunk, float]]:
+        stmt = (
+            select(
+                CourseChunk,
+                (1 - CourseChunk.embedding.cosine_distance(query_vector)).label("similarity")
+            )
+            .where(CourseChunk.video_id == video_id)
+            .where(CourseChunk.timestamp >= start_time)
+            .where(CourseChunk.timestamp <= end_time)
+            .order_by(CourseChunk.embedding.cosine_distance(query_vector))
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        return list(result.all())
+
 
 
     async def hybrid_search(

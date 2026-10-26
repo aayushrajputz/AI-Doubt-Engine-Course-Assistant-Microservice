@@ -9,9 +9,9 @@ class CourseChunk(Base):
 
 
     id: Mapped[int] = mapped_column(primary_key=True,autoincrement=True)
+    video_id : Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     course_id : Mapped[int] = mapped_column(Integer,index=True, nullable=False)
-    
     content : Mapped[str] = mapped_column(Text,nullable=False)
-
     embedding : Mapped[list[float]] = mapped_column(Vector(768),nullable=False)
+    timestamp: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
      

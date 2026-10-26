@@ -1,4 +1,4 @@
-# 🚀 LearnTube.ai: 10-Day Production AI Backend Roadmap
+# 🚀 LearnTube.ai: 15-Day Production AI Backend Roadmap
 **Role Target:** AI Backend Engineer (LearnTube.ai)  
 **Compensation Benchmark:** ₹1.2M - ₹2.5M INR/yr  
 **Interview Format:** Timed Incident Simulation & Live Debugging on Production Systems  
@@ -158,6 +158,101 @@
 
 ---
 
+## 🎬 Phase 2: Video Context-Aware Doubt Engine (Day 11-15)
+
+> **Goal:** Student kisi bhi video ka timestamp de ke pooch sake — "is part mein ye concept samajh nahi aaya" — aur system us specific chapter ka context LLM ko bheje for a laser-focused answer.
+
+### Day 11: Video & Chapter Data Models + Admin CRUD APIs
+- **Concepts:** Relational data modeling (1:Many — Video has many Chapters), time-range overlap queries, admin-only endpoints.
+- **Implementations:**
+  - PostgreSQL Tables:
+    1. `videos` — `id`, `title`, `url`, `course_id`, `description`, `duration_seconds`, `created_at`
+    2. `video_chapters` — `id`, `video_id` (FK), `title`, `start_time` (seconds), `end_time` (seconds), `summary`, `key_concepts` (text[])
+  - Pydantic v2 DTOs: `VideoCreate`, `VideoResponse`, `ChapterCreate`, `ChapterResponse`
+  - Admin Router (`/admin/videos/`):
+    - `POST /admin/videos/` — Add a new video with metadata
+    - `GET /admin/videos/{course_id}` — List all videos for a course
+    - `POST /admin/videos/{video_id}/chapters/` — Add chapters with start/end timestamps
+    - `GET /admin/videos/{video_id}/chapters/` — List all chapters of a video
+    - `PUT /admin/videos/{video_id}/chapters/{chapter_id}` — Update chapter content
+    - `DELETE /admin/videos/{video_id}/chapters/{chapter_id}` — Remove a chapter
+- **Learntube Incident Prep:** Debugging overlapping chapter time ranges & orphan foreign keys.
+
+---
+
+### Day 12: Smart Timestamp → Chapter Resolver & Local Scope Isolation
+- **Concepts:** Time-range binary search, interval detection, 3-tier priority matching, timestamp bucketing for cache hits.
+- **Implementations:**
+  - `ChapterResolver` service (`app/services/chapter_resolver.py`):
+    - **Tier 1 (Exact Match)**: `start_time <= timestamp <= end_time`.
+    - **Tier 2 (Fuzzy Buffer ±30s)**: `start_time - 30 <= timestamp <= end_time + 30` (handles border clicks).
+    - **Tier 3 (Nearest Distance Fallback)**: `min(abs(start_time - ts), abs(end_time - ts))` (handles gaps between chapters).
+    - **Timestamp Bucketing for Cache Keys**:
+      - Har second ka alag cache key nahi banta (warna cache hit ratio 0% hoga).
+      - Chapter level par bucket: `f"video:{video_id}:chapter:{chapter.id}"`.
+      - Unchaptered video par 30s bucket: `f"video:{video_id}:bucket:{timestamp // 30 * 30}"`.
+    - Returns structured `ChapterContext` with formatted time strings, summaries, key concepts, and `cache_bucket_key`.
+
+---
+
+### Day 13: Hierarchical Context-Bounded RAG with Cross-Video RRF Fallback & Cost-Gating
+- **Concepts:** Two-Tier Retrieval (Local Chapter Window -> Course-Wide RRF Fallback), Reciprocal Rank Fusion, Cross-Referenced LLM Synthesis.
+- **Architecture Flow (Local-First, Course-Wide Fallback):**
+  - **Tier 1 (Local Chapter Context - Primary)**:
+    - Pehle student ke current video aur chapter window se local context verify karo.
+    - Agar doubt concept usi chapter ke summary/key-concepts aur local cached answers me directly mil jata hai -> **Zero LLM Token Cost (₹0.00)**.
+  - **Tier 2 (Course-Wide RRF Fallback - Scope Expansion)**:
+    - Agar concept current video ke bahar kisi aur lecture me explain kiya gaya hai (e.g., current lecture React ka hai par foundational concept JavaScript Closures video me tha):
+    - Trigger **Hybrid RRF (pgvector Cosine Distance + Full-Text Keyword Search)** across all `course_chunks`.
+    - Retrieve cross-video references with their respective `video_id` and timestamp offsets.
+  - **Tier 3 (Cross-Referenced Synthesis)**:
+    - LLM prompt dynamically combines:
+      1. *Current Context*: "Student is watching Video X at timestamp Y"
+      2. *Reference Context*: "Foundational concept explained in Video Z at offset W"
+    - Student gets an exact answer + reference recommendation to the other video without hallucinations!
+  - Extend `doubts` table with `video_id` (FK) and `timestamp` (integer seconds).
+  - Update `doubt_router.py` streaming SSE engine with Hierarchical Context-Bounded + RRF Fallback injection.
+
+---
+
+### Day 14: Video Doubt Integration Testing + Edge Cases
+- **Concepts:** Integration test patterns, edge case handling, error recovery, API contract testing.
+- **Implementations:**
+  - Test Suite (`test_video_doubts.py`):
+    1. **Happy Path:** Add video → Add chapters → Create doubt with timestamp → Verify LLM gets chapter context.
+    2. **No Video Match:** Doubt with invalid `video_id` → Graceful 404 with helpful error.
+    3. **No Chapter at Timestamp:** Timestamp falls in gap between chapters → Nearest chapter fallback.
+    4. **Doubt without Video:** Regular doubt (no `video_id`) → Works exactly like before (backward compatible).
+    5. **Cache Isolation:** Same question on different timestamps → Different cached answers.
+  - Error handling with proper HTTP status codes:
+    - `404` — Video not found
+    - `422` — Timestamp without video_id (validation error)
+    - `200` — Graceful fallback when no chapter found (answer without context)
+
+---
+
+### Day 15: Bulk Chapter Import + Video Doubt Analytics
+- **Concepts:** Bulk upsert operations, CSV/JSON import, aggregation queries, educational analytics.
+- **Implementations:**
+  - Bulk Chapter Import API:
+    - `POST /admin/videos/{video_id}/chapters/bulk` — Upload JSON array of chapters at once.
+    - Validation: Overlapping time ranges detection, auto-sort by `start_time`.
+  - Analytics Endpoints:
+    - `GET /analytics/videos/{video_id}/hotspots` — Most doubted timestamps (where students struggle most).
+    - `GET /analytics/courses/{course_id}/difficult-chapters` — Chapters with highest doubt count.
+    ```sql
+    SELECT vc.title, vc.start_time, COUNT(d.id) as doubt_count
+    FROM video_chapters vc
+    JOIN doubts d ON d.video_id = vc.video_id 
+      AND d.timestamp BETWEEN vc.start_time AND vc.end_time
+    GROUP BY vc.id
+    ORDER BY doubt_count DESC
+    LIMIT 10;
+    ```
+  - This data helps content creators know **exactly which parts** of their video need improvement!
+
+---
+
 ## 🛠️ Tech Stack Locked
 | Component | Technology |
 |---|---|
@@ -168,3 +263,5 @@
 | Orchestration | **LangGraph** (StateGraph) |
 | Token / Cost Engine | **Tiktoken** + Async Background Tasks |
 | Streaming | **SSE (Server-Sent Events)** with StreamingResponse |
+| Containerization | **Docker** + **Docker Compose** (Multi-service) |
+

@@ -1,12 +1,14 @@
-from pydantic import BaseModel , Field, field_validator
-from pydantic import ConfigDict
+from pydantic import BaseModel , Field, field_validator,ConfigDict
+from typing import Optional
 
 class DoubtCreate(BaseModel):
     user_id : int = Field(default=1, gt=0, title = "user id")
+    video_id: Optional[int] = None
     title : str = Field(..., min_length = 5, title = "doubt title")
     question : str = Field(..., title = "question")
     course_id : int = Field(..., gt=0, title = "course id")
     tags : list[str] = []
+    timestamp: Optional[int] = None
 
     @field_validator("title")
     @classmethod
@@ -20,12 +22,14 @@ class DoubtCreate(BaseModel):
         
 class DoubtResponse(BaseModel):
     user_id : int
+    video_id: Optional[int] = None
     id : int
     title : str
     question : str
     course_id : int
     tags : list[str]
     status : str
+    timestamp: Optional[int] = None
     
     model_config = ConfigDict(from_attributes=True)
 

@@ -4,7 +4,9 @@ from fastapi import FastAPI
 import redis.asyncio as aioredis
 from app.core.database import engine
 from app.routers.doubt_router import router as doubt_router
+from app.routers.video_router import router as video_router
 from app.models.doubt_model import Base
+from app.models.video_model import Video, VideoChapter
 from sqlalchemy import text
 from app.models.course_chunk_model import CourseChunk
 from fastapi import Response, status
@@ -58,6 +60,7 @@ async def logging_middleware(request: Request, call_next):
     return response
 
 app.include_router(doubt_router)
+app.include_router(video_router)
 
 @app.get('/health')
 async def health_check(response: Response):

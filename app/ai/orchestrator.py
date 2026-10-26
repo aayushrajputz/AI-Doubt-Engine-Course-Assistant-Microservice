@@ -54,7 +54,7 @@ workflow.add_edge("refusal_node", END)
 tutor_graph = workflow.compile()
 
 # Real-Time SSE Token Streamer
-async def stream_doubt_answer(question: str, course_id: int,redis=None,cache_key: str=None):
+async def stream_doubt_answer(question: str, course_id: int, redis=None, cache_key: str=None, video_context: str=None):
     full_answer = []
     is_safe, reason = sanitize_user_prompt(question)
     if not is_safe:
@@ -62,7 +62,11 @@ async def stream_doubt_answer(question: str, course_id: int,redis=None,cache_key
         yield "data: [DONE]\n\n"
         return
 
-    prompt = f"Learner Question: {question}"
+    if video_context:
+        prompt = f"{video_context}\n\nLearner Question: {question}"
+    else:
+        prompt = f"Learner Question: {question}"
+
     input_tokens = count_tokens(prompt) + count_tokens(SYSTEM_PROMPT)
 
     stream = await groq_client.chat.completions.create(
