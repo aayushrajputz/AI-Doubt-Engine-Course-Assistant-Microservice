@@ -17,4 +17,4 @@ logger.add(
     compression="zip",      # Purane logs zip compress kare
     format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
     level="INFO"
-)
+) 

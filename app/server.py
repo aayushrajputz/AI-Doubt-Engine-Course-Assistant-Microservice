@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 import redis.asyncio as aioredis
@@ -22,8 +23,9 @@ async def lifespan(app: FastAPI):
         CREATE INDEX IF NOT EXISTS idx_course_chunks_hsnw ON course_chunks USING hnsw (embedding vector_cosine_ops) WITH(m = 16, ef_construction=64)"""))
     logger.info("PostgreSQL tables and pgvector HNSW index initialized")
 
-    app.state.redis = aioredis.from_url("redis://localhost:6379", decode_responses=True)
-    logger.info("Connected to Redis 7")
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    app.state.redis = aioredis.from_url(redis_url, decode_responses=True)
+    logger.info(f"Connected to Redis ({redis_url})")
 
     try:
         yield
