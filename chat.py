@@ -1,52 +1,62 @@
-import httpx, asyncio,json,sys,time
+import httpx, asyncio, json, sys
 
-sys.stdout.reconfigure(encoding = "utf-8")
+sys.stdout.reconfigure(encoding="utf-8")
 
 async def chat():
-    print("Hey there! Welcome to Doubts AI Chat.")
-    print("type `exit` to exit\n")
-    course_id = int(input("Please enter your Course Id First : "))
+    print("🎓 Hey there! Welcome to LearnTube AI Doubt Engine")
+    print("Type `exit` to quit\n")
+    
+    course_id = int(input(" Enter your Course ID: "))
+    
+    # Optional video context
+    use_video = input("🎬 Kya video lecture ka context dena hai? (y/n): ").strip().lower()
+    video_id = None
+    timestamp = None
+    if use_video == "y":
+        video_id = int(input("   Enter Video ID: "))
+        timestamp = int(input("   Enter Timestamp (seconds): "))
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=120.0, base_url="http://127.0.0.1:8000") as client:
         while True:
-            question = input("\n You:")
-            if question.lower() in ("exit","quit"):
-                print("Bye! have a nice day")
+            question = input("\n You: ")
+            if question.lower() in ("exit", "quit"):
+                print("Bye! Have a nice day ")
                 break
 
-            res = await client.post("http://127.0.0.1:8000/doubts/", json={
-                "title" : " AI Doubt Engine ",
+            # Build payload — video_id aur timestamp optional
+            payload = {
+                "title": "AI Doubt Engine",
                 "question": question,
                 "course_id": course_id,
                 "tags": ["general"]
-                })
+            }
+            if video_id:
+                payload["video_id"] = video_id
+                payload["timestamp"] = timestamp
+
+            res = await client.post("/doubts/", json=payload)
             doubt_id = res.json()["id"]
 
-            async with client.stream("POST", f"http://127.0.0.1:8000/doubts/{doubt_id}/stream") as response:
+            # Stream the answer
+            async with client.stream("POST", f"/doubts/{doubt_id}/stream") as response:
                 async for line in response.aiter_lines():
-                    if not line:
+                    if not line or not line.startswith("data:"):
                         continue
+                    text = line[6:] if line.startswith("data: ") else line[5:]
 
-                    if line.startswith("data:"):
-                        text = line[6:] if line.startswith("data: ") else line[5:]
-                        
-                        if text == "[DONE]":
-                            print("\n")
-                        elif '"event": "usage_metrics"' in text or '"event":"usage_metrics"' in text:
-                            try:
-                                metrics = json.loads(text)
-                                print(f"\n\nTokens: {metrics.get('total_tokens',0)} | Cost: {metrics.get('cost_inr','₹0.00')}")
-                            except Exception:
-                                pass
-                        elif text.startswith("[SEMANTIC CACHE HIT"):
-                            print(f"\n {text}\n")
-                        else:
-                            print(text, end="", flush=True)
-
+                    if text == "[DONE]":
+                        print("\n")
+                    elif text.startswith("[EXACT CACHE HIT"):
+                        print(f"\n {text}")
+                    elif text.startswith("[SEMANTIC CACHE HIT"):
+                        print(f"\n {text}")
+                    elif '"event": "usage_metrics"' in text or '"event":"usage_metrics"' in text:
+                        try:
+                            metrics = json.loads(text)
+                            print(f"\n Tokens: {metrics.get('total_tokens',0)} | Cost: {metrics.get('cost_inr','₹0.00')}")
+                        except Exception:
+                            pass
+                    else:
+                        print(text, end="", flush=True)
 
 asyncio.run(chat())
- 
-    
-      
-
-

@@ -77,6 +77,7 @@
 ## 📁 Project Structure
 
 ```
+├── chat.py                       # Unified interactive CLI client (video context optional)
 ├── demo_student_video_doubt.py   # Live student demo showing Exact & Semantic caching
 ├── test_day_14_chaos_edge_cases.py# Day 14 chaos & edge case test suite
 ├── test_day_15_bulk_and_hotspots.py# Day 15 bulk upload & analytics test suite
@@ -178,7 +179,7 @@ GET /health
 { "status": "healthy", "service": "ai tutor engine", "version": "1.0.0" }
 ```
 
-### Create a Doubt
+### Create a Doubt (General — No Video)
 ```http
 POST /doubts/
 Content-Type: application/json
@@ -190,7 +191,23 @@ Content-Type: application/json
   "tags": ["python", "threading"]
 }
 ```
-Response: `201 Created` — Doubt object with auto-generated embedding stored for semantic matching.
+Response: `201 Created` — Course-wide RAG retrieval for answer.
+
+### Create a Doubt (Video Context-Aware)
+```http
+POST /doubts/
+Content-Type: application/json
+
+{
+  "title": "useEffect cleanup doubt",
+  "question": "How does the cleanup function in useEffect prevent memory leaks?",
+  "course_id": 101,
+  "video_id": 1,
+  "timestamp": 510,
+  "tags": ["react"]
+}
+```
+Response: `201 Created` — Chapter-bounded RAG with video lecture context for precise answers.
 
 ### Get Doubt by ID
 ```http
