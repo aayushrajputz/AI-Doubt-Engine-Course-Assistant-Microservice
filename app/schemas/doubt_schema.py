@@ -1,4 +1,4 @@
-from pydantic import BaseModel , Field, field_validator,ConfigDict
+from pydantic import BaseModel , Field, field_validator,ConfigDict,model_validator
 from typing import Optional
 
 class DoubtCreate(BaseModel):
@@ -17,6 +17,12 @@ class DoubtCreate(BaseModel):
         if len(v) < 5:
             raise ValueError("Title must be atleast 5 character")
         return v 
+    @model_validator(mode="after")
+    def validate_video_and_timestamp(self):
+        if self.timestamp is not None and self.video_id is None:
+            raise ValueError("Timestamp can only be provided when video_id is also provided")
+        
+        return self
 
      
         

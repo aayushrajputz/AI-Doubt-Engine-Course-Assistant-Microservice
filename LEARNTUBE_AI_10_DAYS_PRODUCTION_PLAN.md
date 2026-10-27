@@ -215,41 +215,27 @@
 
 ---
 
-### Day 14: Video Doubt Integration Testing + Edge Cases
+### Day 14: Video Doubt Integration Testing + Edge Cases [COMPLETED]
 - **Concepts:** Integration test patterns, edge case handling, error recovery, API contract testing.
 - **Implementations:**
-  - Test Suite (`test_video_doubts.py`):
-    1. **Happy Path:** Add video → Add chapters → Create doubt with timestamp → Verify LLM gets chapter context.
-    2. **No Video Match:** Doubt with invalid `video_id` → Graceful 404 with helpful error.
-    3. **No Chapter at Timestamp:** Timestamp falls in gap between chapters → Nearest chapter fallback.
-    4. **Doubt without Video:** Regular doubt (no `video_id`) → Works exactly like before (backward compatible).
-    5. **Cache Isolation:** Same question on different timestamps → Different cached answers.
-  - Error handling with proper HTTP status codes:
-    - `404` — Video not found
-    - `422` — Timestamp without video_id (validation error)
-    - `200` — Graceful fallback when no chapter found (answer without context)
+  - Automated Chaos Test Suite (`test_day_14_chaos_edge_cases.py`):
+    1. **Invalid Video ID**: Returns clean HTTP 404 without database foreign key violation (Zero 500 crash).
+    2. **Orphan Timestamp**: Pydantic `@model_validator` rejects timestamp without video_id with HTTP 422.
+    3. **Zero-Chapter Video Fallback**: 30s bucket fallback handles videos with 0 chapters gracefully.
+    4. **Gap Timestamp Match**: Nearest Euclidean/Absolute distance resolves timestamps falling in gaps.
+    5. **Cache Isolation**: Cross-video cache collision prevented via video-scoped cache keys.
 
 ---
 
-### Day 15: Bulk Chapter Import + Video Doubt Analytics
-- **Concepts:** Bulk upsert operations, CSV/JSON import, aggregation queries, educational analytics.
+### Day 15: Bulk Chapter Import + Video Doubt Analytics [COMPLETED]
+- **Concepts:** Bulk database operations, overlapping interval validation, SQL group-by aggregations.
 - **Implementations:**
-  - Bulk Chapter Import API:
-    - `POST /admin/videos/{video_id}/chapters/bulk` — Upload JSON array of chapters at once.
-    - Validation: Overlapping time ranges detection, auto-sort by `start_time`.
-  - Analytics Endpoints:
-    - `GET /analytics/videos/{video_id}/hotspots` — Most doubted timestamps (where students struggle most).
-    - `GET /analytics/courses/{course_id}/difficult-chapters` — Chapters with highest doubt count.
-    ```sql
-    SELECT vc.title, vc.start_time, COUNT(d.id) as doubt_count
-    FROM video_chapters vc
-    JOIN doubts d ON d.video_id = vc.video_id 
-      AND d.timestamp BETWEEN vc.start_time AND vc.end_time
-    GROUP BY vc.id
-    ORDER BY doubt_count DESC
-    LIMIT 10;
-    ```
-  - This data helps content creators know **exactly which parts** of their video need improvement!
+  - Bulk Chapter Import API (`POST /admin/videos/{video_id}/chapters/bulk`):
+    - Multi-chapter JSON upload with automated start_time chronological sorting.
+    - Overlapping interval rejection with HTTP 400 Bad Request.
+  - Video Doubt Hotspots Analytics API (`GET /admin/videos/{video_id}/hotspots`):
+    - PostgreSQL SQL Aggregation (`LEFT OUTER JOIN doubts ON timestamp BETWEEN start_time AND end_time GROUP BY chapter_id`).
+    - Chapters ranked by difficulty/doubt count to pinpoint exact lecture segments needing instructor attention.
 
 ---
 

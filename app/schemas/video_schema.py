@@ -50,3 +50,11 @@ class ChapterResponse(BaseModel):
         if isinstance(v, str):
             return [t.strip() for t in v.split(",") if t.strip()]
         return v
+
+class HotSpotResponse(BaseModel):
+    chapter_id: int
+    chapter_title: str
+    start_time:int
+    end_time:int
+    doubt_count:int
+    

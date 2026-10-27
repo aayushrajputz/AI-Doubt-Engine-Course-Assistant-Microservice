@@ -54,53 +54,62 @@
 
 ---
 
-##  Key Features
+## 🌟 Key Features
 
 | Feature | Description |
 |---|---|
-| **3-Tier Intelligent Caching** | Redis exact match → pgvector semantic similarity (≥85%) → LLM fallback. Eliminates redundant API calls. |
+| **Video Context-Aware Doubts** | Student video timestamp (`08:40`) par doubt poochta hai; system automatically chapter time-window match karke exact lecture boundary mein answer karta hai. |
+| **Hierarchical Two-Tier RAG** | **Tier 1 (Local Bounded)**: Sirf current video aur chapter window ke chunks pgvector HNSW se search karta hai. **Tier 2 (RRF Fallback)**: Cross-video concepts ke liye pure course mein hybrid search trigger karta hai. |
+| **Timestamp Bucketing Cache** | Har second ka alag cache nahi banta; chapter-level bucket (`video:id:chapter:id`) par cache key banti hai, saving 90%+ LLM costs on repeated doubt timestamps. |
+| **Admin Bulk Chapter Import** | Single JSON payload se video ke saare chapters upload karna with automatic chronological sorting aur overlapping time-range validation (`HTTP 400`). |
+| **Video Doubt Hotspots Analytics** | PostgreSQL SQL aggregations (`LEFT JOIN + COUNT GROUP BY chapter_id`) se rank karta hai ki video ke kis chapter mein students sabse zyada doubt pooch rahe hain. |
+| **Two-Tier Intelligent Caching** | **Tier 1**: Redis exact match (~2ms, ₹0.00). **Tier 2**: pgvector HNSW semantic similarity (≥85%, ₹0.00). Eliminates redundant API calls. |
 | **Dual Rate Limiting & Budgeting** | Per-user protection: max 5 requests/hr + 10,000 tokens/hr via Redis TTL keys. Cache hits are free from quota consumption. |
 | **LangGraph Multi-Agent Pipeline** | Guardrail → Retriever → Tutor nodes with conditional routing and state management. |
 | **Hybrid Search (RRF)** | Reciprocal Rank Fusion combining pgvector cosine similarity + keyword ILIKE search for maximum recall. |
 | **HNSW Vector Indexing** | Sub-100ms approximate nearest neighbor search on 768-dim embeddings (`m=16, ef_construction=64`). |
 | **Real-Time SSE Streaming** | Token-by-token answer streaming via `StreamingResponse` with TTFT optimization. |
-| **Interactive CLI Chat Client** | Terminal-based interactive client (`chat.py`) demonstrating live SSE streaming and cost breakdown. |
 | **Prompt Injection Guard** | Regex-based sanitizer blocks jailbreak attempts and off-topic prompt injections. |
 | **Cost & Token Accounting** | BPE `tiktoken` accounting with exact prompt/completion token count and INR/USD cost calculation. |
-| **Embedding-on-Ingest** | Every doubt is embedded at creation time for future semantic matching. |
 
 ---
 
 ## 📁 Project Structure
 
 ```
-├── chat.py                      # Interactive CLI terminal client for live testing
+├── demo_student_video_doubt.py   # Live student demo showing Exact & Semantic caching
+├── test_day_14_chaos_edge_cases.py# Day 14 chaos & edge case test suite
+├── test_day_15_bulk_and_hotspots.py# Day 15 bulk upload & analytics test suite
 app/
-├── server.py                    # FastAPI app, lifespan (DB + Redis init), health check
+├── server.py                     # FastAPI app, lifespan (DB + Redis init), health check, logging middleware
 ├── core/
-│   ├── database.py              # AsyncEngine, async_sessionmaker, get_db dependency
-│   └── rate_limiter.py          # Dual sliding-window rate limiter & token recorder (Redis)
+│   ├── database.py               # AsyncEngine with pool_pre_ping=True, pool_recycle=300
+│   └── rate_limiter.py           # Dual sliding-window rate limiter & token recorder (Redis)
 ├── models/
-│   ├── doubt_model.py           # Doubt ORM (id, question, ai_answer, embedding Vector(768))
-│   └── course_chunk_model.py    # CourseChunk ORM (content, embedding Vector(768))
+│   ├── doubt_model.py            # Doubt ORM (video_id FK, timestamp, embedding Vector(768))
+│   ├── video_model.py            # Video & VideoChapter ORM (start_time, end_time, key_concepts)
+│   └── course_chunk_model.py     # CourseChunk ORM (video_id, timestamp, content, embedding)
 ├── schemas/
-│   └── doubt_schema.py          # Pydantic v2 DTOs (DoubtCreate, DoubtResponse)
-├── repositories/
-│   ├── doubt_repository.py      # CRUD operations for doubts
-│   └── course_chunk_repository.py  # Vector search, hybrid RRF search, semantic cache query
+│   ├── doubt_schema.py           # Pydantic v2 DTOs with orphan timestamp validator
+│   └── video_schema.py           # Video, Chapter, Bulk & Hotspots Pydantic schemas
 ├── services/
-│   └── embedding_service.py     # Google Gemini embedding client (768-dim vectors)
+│   ├── chapter_resolver.py       # Smart 3-tier timestamp resolver with timestamp bucketing
+│   └── embedding_service.py      # Google Gemini embedding client (768-dim vectors)
+├── repositories/
+│   ├── doubt_repository.py       # CRUD operations for doubts
+│   └── course_chunk_repository.py   # Bounded search, hybrid RRF search, semantic cache query
 ├── routers/
-│   └── doubt_router.py          # REST endpoints: POST /doubts/, GET /doubts/{id}, POST /doubts/{id}/stream
+│   ├── doubt_router.py           # REST endpoints: /doubts/, /doubts/{id}/stream
+│   └── video_router.py           # Admin APIs: /admin/videos/, /chapters/bulk, /hotspots
 └── ai/
-    ├── state.py                 # AgentState TypedDict for LangGraph
-    ├── sanitizers.py            # Prompt injection & jailbreak regex guard
-    ├── orchestrator.py          # LangGraph compiled graph, cost calculator, SSE stream generator
+    ├── state.py                  # AgentState TypedDict for LangGraph
+    ├── sanitizers.py             # Prompt injection & jailbreak regex guard
+    ├── orchestrator.py           # LangGraph compiled graph, cost calculator, SSE stream generator
     └── nodes/
-        ├── guardrail_node.py    # Input safety filter
-        ├── refusal_node.py      # Off-topic refusal response
-        ├── retriever_node.py    # pgvector HNSW hybrid retrieval
-        └── tutor_node.py        # Groq LLM pedagogical answer generation
+        ├── guardrail_node.py     # Input safety filter
+        ├── refusal_node.py       # Off-topic refusal response
+        ├── retriever_node.py     # pgvector HNSW hybrid retrieval
+        └── tutor_node.py         # Groq LLM pedagogical answer generation
 ```
 
 ---

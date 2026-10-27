@@ -15,7 +15,8 @@ from app.repositories.course_chunk_repository import CourseChunkRepository
 from app.core.rate_limiter import check_rate_limit, record_tokens
 from app.services.chapter_resolver import resolve_chapter
 import hashlib
-
+from app.models.video_model import Video
+from sqlalchemy import select
 
 router  = APIRouter(prefix="/doubts",tags=["doubts"])
  
@@ -27,6 +28,13 @@ async def create_doubt(
     payload: DoubtCreate,
     db: AsyncSession = Depends(get_db)  
 ):
+    if payload.video_id:
+        video_check = await db.execute(select(Video).where(Video.id == payload.video_id))
+        if not video_check.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail= f"Video with this {payload.video_id} not found"
+            )
     # Doubt ka embedding generate karo semantic matching ke liye
     q_embedding = await get_embedding(payload.question)
 
