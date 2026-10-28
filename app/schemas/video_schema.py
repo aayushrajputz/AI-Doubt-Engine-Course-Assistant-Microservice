@@ -57,4 +57,7 @@ class HotSpotResponse(BaseModel):
     start_time:int
     end_time:int
     doubt_count:int
+
+    model_config = ConfigDict(from_attributes=True)
+    
     

@@ -3,7 +3,7 @@ import httpx, asyncio, json, sys
 sys.stdout.reconfigure(encoding="utf-8")
 
 async def chat():
-    print("🎓 Hey there! Welcome to LearnTube AI Doubt Engine")
+    print(" Hey there! Welcome to LearnTube AI Doubt Engine")
     print("Type `exit` to quit\n")
     
     course_id = int(input(" Enter your Course ID: "))

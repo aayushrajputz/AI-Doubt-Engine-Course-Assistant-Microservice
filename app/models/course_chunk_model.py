@@ -14,4 +14,4 @@ class CourseChunk(Base):
     content : Mapped[str] = mapped_column(Text,nullable=False)
     embedding : Mapped[list[float]] = mapped_column(Vector(768),nullable=False)
     timestamp: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
-     
+    
