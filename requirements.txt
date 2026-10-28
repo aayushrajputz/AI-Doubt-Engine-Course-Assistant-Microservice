@@ -13,3 +13,4 @@ langgraph==1.2.15
 tiktoken==0.14.0
 loguru==0.7.3
 python-dotenv==1.2.4
+youtube-transcript-api>=1.2.0

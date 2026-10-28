@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select                          # DB queries ke liye
 from app.core.database import get_db                   # session dependency
@@ -7,9 +8,16 @@ from app.schemas.video_schema import (                 # dono schemas
     VideoCreate, VideoResponse,
     ChapterCreate, ChapterResponse
 )
-from sqlalchemy import func
+from sqlalchemy import func, delete
 from app.models.doubt_model import Doubt
 from app.schemas.video_schema import HotSpotResponse
+import json
+
+from app.services.transcript_service import(
+    extract_youtube_video_id,
+    fetch_youtube_transcript,
+    stream_generate_chapters
+)
 
 router = APIRouter(prefix="/admin/videos", tags=["videos"])
 
@@ -37,6 +45,7 @@ async def list_videos_by_course(
     result  = await session.execute(query)
     videos = result.scalars().all()
     return videos
+
 @router.post("/{video_id}/chapters",response_model=ChapterResponse,status_code=status.HTTP_201_CREATED)
 async def add_chapter(
     video_id:int,
@@ -74,7 +83,6 @@ async def list_chapters(
     video_id: int,
     session:AsyncSession = Depends(get_db)
 ):
-
     query = (
         select(VideoChapter)
         .where(VideoChapter.video_id == video_id)
@@ -82,7 +90,6 @@ async def list_chapters(
     )
     result = await session.execute(query)
     chapters = result.scalars().all()
-
     return chapters 
 
 @router.post("/{video_id}/chapters/bulk",response_model=list[ChapterResponse],status_code=status.HTTP_201_CREATED)
@@ -91,7 +98,6 @@ async def add_bulk_chapters(
     chapters:list[ChapterCreate],
     session:AsyncSession=Depends(get_db)
 ):
-
     video_query = select(Video).where(Video.id == video_id)
     result = await session.execute(video_query)
     video = result.scalar_one_or_none()
@@ -140,7 +146,6 @@ async def get_hotspots(
     video_id: int,
     session: AsyncSession = Depends(get_db)
 ):
-    # 1. Video check
     video_query = select(Video).where(Video.id == video_id)
     video_result = await session.execute(video_query)
     if not video_result.scalar_one_or_none():
@@ -149,7 +154,6 @@ async def get_hotspots(
             detail=f"Video not found with this {video_id}"
         )
 
-    # 2. Query (if block ke bahar!)
     query = (
         select(
             VideoChapter.id.label("chapter_id"),
@@ -186,7 +190,98 @@ async def get_hotspots(
 
     return hotspots
 
-    
+@router.delete("/{video_id}",status_code=status.HTTP_200_OK)
+async def delete_video(
+    video_id:int,
+    session:AsyncSession = Depends(get_db)
+):
+    video_query = select(Video).where(Video.id == video_id)
+    result = await session.execute(video_query)
+    video = result.scalar_one_or_none()
+
+    if not video:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Video with this id{video_id} not found"
+        )
+    await session.execute(
+        delete(VideoChapter).where(VideoChapter.video_id == video_id)
+    )
+    await session.execute(
+        delete(Doubt).where(Doubt.video_id == video_id)
+    )
+    await session.delete(video) 
+    await session.commit()
+
+    return{"message": f"Video #{video_id} and its chapters deleted successfully"}
 
 
-    
+@router.post("/{video_id}/auto-chapters-stream")
+async def auto_generate_chapters_stream(
+    video_id: int, 
+    session: AsyncSession = Depends(get_db)
+):
+    """
+    REAL-TIME SSE STREAMING FOR CHAPTERS:
+    Har chapter generate hote hi stream hoga aur real-time me DB me insert hoga!
+    """
+    video_query = select(Video).where(Video.id == video_id)
+    result = await session.execute(video_query)
+    video = result.scalar_one_or_none()
+
+    if not video:
+        raise HTTPException(status_code=404, detail="video is not found")
+
+    yt_id = extract_youtube_video_id(video.url)
+    if not yt_id:
+        raise HTTPException(status_code=400, detail="Valid youtube url is required")
+
+    try:
+        transcript = fetch_youtube_transcript(yt_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Pehle purane chapters saaf karo taaki fresh save hon
+    await session.execute(delete(VideoChapter).where(VideoChapter.video_id == video_id))
+    await session.commit()
+
+    duration = video.duration_seconds or 1800
+
+    async def chapter_generator():
+        yield "data: [STARTING_AI_TRANSCRIPTION]\n\n"
+        
+        async for ch in stream_generate_chapters(transcript, total_duration_seconds=duration):
+            # 1. DB me save karo instantly
+            concepts = ch.get("key_concepts", [])
+            concepts_str = ",".join(concepts) if isinstance(concepts, list) else str(concepts)
+            
+            db_chapter = VideoChapter(
+                video_id=video_id,
+                title=ch.get("title", "Lecture Section"),
+                start_time=ch.get("start_time", 0),
+                end_time=ch.get("end_time", 300),
+                summary=ch.get("summary", ""),
+                key_concepts=concepts_str
+            )
+            session.add(db_chapter)
+            await session.commit()
+            await session.refresh(db_chapter)
+
+            # 2. SSE line yield karo with DB id!
+            event_data = {
+                "id": db_chapter.id,
+                "video_id": video_id,
+                "title": db_chapter.title,
+                "start_time": db_chapter.start_time,
+                "end_time": db_chapter.end_time,
+                "summary": db_chapter.summary,
+                "key_concepts": ch.get("key_concepts", [])
+            }
+            yield f"data: {json.dumps(event_data)}\n\n"
+
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(chapter_generator(), media_type="text/event-stream")
+
+    return StreamingResponse(chapter_generator(), media_type="text/event-stream")
+
