@@ -80,6 +80,7 @@ export default function Student({ cfg, setCfg, videos = [] }) {
         const d = data.trim()
         if (d === '[DONE]') return
         if (d.startsWith('[EXACT CACHE HIT')) return patch(idx, { badge: { kind: 'exact', label: '⚡ Exact cache hit · 0ms / ₹0.00' } })
+        if (d.startsWith('[FTS DICTIONARY CACHE HIT')) return patch(idx, { badge: { kind: 'fts', label: '📖 FTS Dictionary Hit · Postgres english · ₹0.00' } })
         const sem = d.match(/^\[SEMANTIC CACHE HIT\s*\(?([\d.]+%?)\)?\]/)
         if (sem) return patch(idx, { badge: { kind: 'semantic', label: `🧠 Semantic match ${sem[1]} · pgvector` } })
         if (d.startsWith('{') && d.includes('usage_metrics')) {

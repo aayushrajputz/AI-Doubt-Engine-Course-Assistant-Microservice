@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, text
 from app.models.course_chunk_model import CourseChunk
 from app.models.doubt_model import Doubt
 class CourseChunkRepository:
@@ -123,3 +123,54 @@ class CourseChunkRepository:
             if similarity>= threshold:
                 return doubt_obj, similarity
         return None 
+    
+    async def find_fts_similar_doubt(
+        self,
+        session: AsyncSession,
+        course_id: int,
+        question_text: str,
+        video_id: int | None = None,
+        start_time: int | None = None,
+        end_time: int | None = None
+    ) -> Doubt | None:
+        """
+        Postgres Full-Text Search (english dictionary):
+        Strips stopwords & conversational filler, matches root lexemes using ts_rank.
+        """
+        # Exclude common conversational noise lexemes from search tokens
+        sql = """
+        WITH query_lexemes AS (
+            SELECT string_agg(lexeme, ' | ') as ts_q
+            FROM unnest(to_tsvector('english', :input)) as lexeme
+            WHERE lexeme NOT IN ('tell', 'need', 'help', 'pleas', 'realli', 'know', 'want', 'explain', 'can', 'sir')
+        )
+        SELECT d.id, ts_rank(to_tsvector('english', d.question), to_tsquery('english', q.ts_q)) as score
+        FROM doubts d, query_lexemes q
+        WHERE d.course_id = :course_id
+          AND d.ai_answer IS NOT NULL
+          AND q.ts_q IS NOT NULL
+          AND to_tsvector('english', d.question) @@ to_tsquery('english', q.ts_q)
+          AND (CAST(:video_id AS INTEGER) IS NULL OR d.video_id = CAST(:video_id AS INTEGER))
+          AND (CAST(:start_time AS INTEGER) IS NULL OR d.timestamp >= CAST(:start_time AS INTEGER))
+          AND (CAST(:end_time AS INTEGER) IS NULL OR d.timestamp <= CAST(:end_time AS INTEGER))
+        ORDER BY score DESC
+        LIMIT 1;
+        """
+        params = {
+            "input": question_text,
+            "course_id": course_id,
+            "video_id": video_id,
+            "start_time": start_time,
+            "end_time": end_time
+        }
+        res = await session.execute(text(sql), params)
+        row = res.first()
+        if row and row[1] and row[1] >= 0.01:
+            doubt_id = row[0]
+            stmt = select(Doubt).where(Doubt.id == doubt_id)
+            d_res = await session.execute(stmt)
+            return d_res.scalar_one_or_none()
+        return None
+       
+
+       

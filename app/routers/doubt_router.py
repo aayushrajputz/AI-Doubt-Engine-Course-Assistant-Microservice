@@ -122,6 +122,40 @@ INSTRUCTION: Address the student's question specifically in context of what is t
         return StreamingResponse(stream_cached(), media_type="text/event-stream")
 
     # 2. Semantic Cache Check (Postgres HNSW Vector Matching)
+        # 2. Tier 2: Postgres Full-Text Search Dictionary Cache (Stopwords removal & Stemming)
+    fts_matched = await chunk_repo.find_fts_similar_doubt(
+        session=db,
+        course_id=doubt.course_id,
+        question_text=doubt.question,
+        video_id=chapter_ctx.video_id if chapter_ctx else doubt.video_id,
+        start_time=chapter_ctx.start_time if chapter_ctx else None,
+        end_time=chapter_ctx.end_time if chapter_ctx else None
+    )
+
+    if fts_matched and fts_matched.ai_answer:
+        doubt.ai_answer = fts_matched.ai_answer
+        await db.commit()
+        await redis.set(cache_key, fts_matched.ai_answer, ex=86400)
+
+        async def stream_fts():
+            yield "data: [FTS DICTIONARY CACHE HIT (Postgres english)]\n\n"
+            for line in fts_matched.ai_answer.splitlines(keepends=True):
+                yield f"data: {line}\n\n"
+
+            metrics = {
+                "event": "usage_metrics",
+                "cached": True,
+                "cache_type": "postgres_fts_dictionary",
+                "matched_doubt_id": fts_matched.id,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "cost_inr": "₹0.00",
+                "cost_usd": "$0.0000"
+            }
+            yield f"data: {json.dumps(metrics)}\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(stream_fts(), media_type="text/event-stream")
     if doubt.embedding:
         similar_result = await chunk_repo.find_semantically_similar_doubts(
             session=db,

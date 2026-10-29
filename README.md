@@ -1,4 +1,4 @@
-# 🎓 LearnTube AI — Intelligent Video Course Doubt Engine
+# 🎓 Learn AI — Intelligent Video Course Doubt Engine
 
 > **Production-grade AI-powered doubt resolution & video course platform** built for modern EdTech. Combines **LangGraph multi-agent orchestration**, **pgvector HNSW semantic search**, **Server-Sent Events (SSE) streaming**, and a **Coursera/Udemy-style React web application** with automated YouTube transcription and smart chaptering.
 
@@ -68,7 +68,7 @@
 | **Hierarchical Two-Tier RAG** | **Tier 1 (Local Bounded)**: Searches pgvector HNSW chunks within current chapter timestamp boundary. **Tier 2 (RRF Fallback)**: Cross-video Reciprocal Rank Fusion search across the entire course. |
 | **Timestamp Bucketing Cache** | Chapter-level cache keys (`doubt_cache:video:id:chapter:id:hash`) saving 90%+ LLM costs on repeated doubt timestamps. |
 | **Video Doubt Hotspots Analytics** | SQL aggregation rankings (`LEFT JOIN doubts ON timestamp BETWEEN start_time AND end_time`) highlighting difficult lecture segments in red/orange badges. |
-| **Two-Tier Intelligent Caching** | **Tier 1**: Redis exact match (~2ms, ₹0.00). **Tier 2**: pgvector HNSW semantic similarity (≥85%, ₹0.00). |
+| **Three-Tier Intelligent Caching** | **Tier 1**: Redis exact match (~2ms, ₹0.00). **Tier 2**: PostgreSQL English Dictionary Full-Text Search (`to_tsvector`/`ts_rank` lexeme stemming, ₹0.00). **Tier 3**: pgvector HNSW semantic similarity (≥85%, ₹0.00). |
 | **Dual Rate Limiting & Budgeting** | Sliding-window limiter: max 5 requests/hr + 10,000 tokens/hr via Redis TTL keys (cache hits are free). |
 | **Full Video CRUD & Cascade Cleanup** | Clean deletion of videos, cascade deleting associated chapters and doubt histories to preserve database integrity. |
 
